@@ -8,6 +8,7 @@
 
 #define CLEAR_SCREEN 0x00E0
 #define RETURN_SUBROUTINE 0x00EE
+#define N_PREFIXED_INSTRUCTIONS 2
 
 using namespace std;
 
@@ -68,9 +69,19 @@ private:
 	}
 
 	void is_integer_literal_valid(string literal, int param_number) {
-		for (int i = 0; i < literal.length(); i++) {
-			char c = literal[i];
-			const char* decimal_characters = "0123456789";
+		int start_index = 0;
+		bool hexadecimal = false;
+		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x') {
+			start_index = 2;
+			hexadecimal = true;
+		}
+		for (int i = start_index; i < literal.length(); i++) {
+			char c = tolower(literal[i]);
+			const char* decimal_characters;
+			if (hexadecimal)
+				decimal_characters = "0123456789abcdef";
+			else
+				decimal_characters = "0123456789";
 			if (strchr(decimal_characters, c) == nullptr) {
 				char error_message_buffer[100];
 				sprintf(error_message_buffer, "Illegal character '%c' in integer literal at parameter %d", c, param_number);
@@ -80,6 +91,20 @@ private:
 	}
 
 	void parse_integer_literal(string literal) {
+		int number;
+		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x') {
+			number = stoi(literal.substr(2, string::npos), nullptr, 16);
+		} else {
+			number = stoi(literal, nullptr);
+		}
+		parser_return_values.push(number);
+	}
+
+	void is_address_name_literal_valid(string literal, int param_number) {
+
+	}
+
+	void parse_address_name_literal(string literal) {
 
 	}
 
@@ -90,6 +115,11 @@ private:
 	};
 
 	vector<LiteralType> literal_types = {
+		{
+			"address_name",
+			&c8asm::is_address_name_literal_valid,
+			&c8asm::parse_address_name_literal
+		},
 		{
 			"register",
 			&c8asm::is_register_literal_valid,
@@ -118,12 +148,21 @@ private:
 		exit(0);
 	}
 
+	address_name get_subroutine(string subroutine_name) {
+		for (int i = 0; i < subroutines.size(); i++) {
+			address_name subroutine = subroutines[i];
+			if (subroutine.name == subroutine_name) return subroutine;
+		}
+		char buffer[50];
+		sprintf(buffer, "Unknown subroutine %s", subroutine_name.c_str());
+		fatal(buffer, line_number);
+	}
+
 	void require_args(vector<string> args, vector<LiteralType> types) {
 		for (int i = 0; i < types.size(); i++) {
 			string arg = args[i];
 			// remove carriage return
 			if (arg[arg.length() - 1] == (char)13) arg = arg.substr(0, arg.length() - 1);
-			cout << "arg: " << arg << endl;
 			LiteralType type = types[i];
 			// will exit the assembler if the literal isn't valid
 			(this->*type.is_valid)(arg, i);
@@ -136,30 +175,34 @@ private:
 	}
 
 	void set(vector<string> args) {
-		string arg0 = args[0];
-		string arg1 = args[1];
 		require_args(args, { get_literal_type("register"), get_literal_type("integer") });
-		int value, instruction;
-		if (arg1[0] == '0' && arg1[1] == 'x') {
-			value = stoi(arg1.substr(2, string::npos), nullptr, 16);
-		}
-		else {
-			size_t sz;
-			value = stoi(arg1, &sz);
-		}
-		//instruction |= reg << 8;
+		int value = parser_return_values.top();
+		parser_return_values.pop();
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction = 0x6000;
+		instruction |= reg << 8;
 		instruction |= value;
+		if (instruction == 0x6101) cout << "AAA" << endl;
 		compilation.push_back(instruction);
 	}
 
-	const string COMMAND_NAMES[2] = {
+	void call_subroutine(vector<string> args) {
+		require_args(args, { get_literal_type("address_name") });
+		address_name subroutine = get_subroutine(args[0]);
+		compilation.push_back(0x2000 | subroutine.return_address);
+	}
+
+	const string COMMAND_NAMES[3] = {
 		"CLRSCRN",
-		"SET"
+		"SET",
+		"CALL"
 	};
 
-	void (c8asm::*COMMAND_CALLBACKS[2])(vector<string>) = {
+	void (c8asm::*COMMAND_CALLBACKS[3])(vector<string>) = {
 		&c8asm::clear_screen,
-		&c8asm::set
+		&c8asm::set,
+		&c8asm::call_subroutine
 	};
 
 	void handle_command(string command_name, vector<string> arguments) {
@@ -181,10 +224,12 @@ private:
 		}
 		else if (first_char == '>') return;
 		else if (first_char == ':') {
+			cout << line.substr(1, string::npos) << endl;
 			subroutines.push_back(
 				address_name {
 					line.substr(1, string::npos),
-					compilation.size() * 2
+					// plus N_PREFIXED_INSTRUCTIONS for the prefixed instructions
+					(compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2
 				}
 			);
 			subroutine_depth++;
@@ -227,6 +272,28 @@ public:
 		free(fmem);
 	}
 
+	void save(const char* filename) {
+    int score = 1088;
+    FILE *hs;
+
+    /* create the file and write the value */
+    printf("Writing bytes..\n");
+    hs = fopen(filename,"w");
+    if (hs == NULL)
+    {
+        fprintf(stderr,"Error writing to %s\n",filename);
+        return;
+    }
+    for (int i = 0; i < compilation.size(); i++) {
+			short instruction = compilation[i];
+			char byte0 = (instruction & 0xFF00) >> 8;
+			char byte1 = instruction & 0xFF;
+			fwrite(&byte0, sizeof(char), 1, hs);
+			fwrite(&byte1, sizeof(char), 1, hs);
+		}
+    fclose(hs);
+	}
+
 	void parse(){
 		string line_buffer;
 		for (int i = 0; i < fsize; i++) {
@@ -241,6 +308,9 @@ public:
 			if (c != '\t' && c != ' ')
 				line_buffer += c;
 		}
+		call_subroutine({ "main" });
+		compilation.insert(compilation.begin(), compilation[compilation.size()-1]);
+		compilation.pop_back();
+		compilation.insert(compilation.begin()+1, 0x1000 | (compilation.size()*2)+2);
 	}
-
 };
