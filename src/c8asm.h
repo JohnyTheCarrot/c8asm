@@ -101,11 +101,19 @@ private:
 	}
 
 	void is_address_name_literal_valid(string literal, int param_number) {
-
+		const char* allowed_characters = "abcdefghijklmnopqrstuvwxyz0123456789_-";
+		for (int i = 0; i < literal.length(); i++) {
+			char c = literal[i];
+			if (strchr(allowed_characters, c) == nullptr) {
+				char buffer[100];
+				sprintf(buffer, "Illegal character '%c' at %d", c, i);
+				fatal(buffer, line_number);
+			}
+		}
 	}
 
 	void parse_address_name_literal(string literal) {
-
+		address_references.push(literal);
 	}
 
 	struct LiteralType {
@@ -183,34 +191,110 @@ private:
 		int instruction = 0x6000;
 		instruction |= reg << 8;
 		instruction |= value;
-		if (instruction == 0x6101) cout << "AAA" << endl;
 		compilation.push_back(instruction);
 	}
 
 	void call_subroutine(vector<string> args) {
 		require_args(args, { get_literal_type("address_name") });
-		address_name subroutine = get_subroutine(args[0]);
+		string arg = args[0];
+		address_name subroutine = get_subroutine(arg);
 		compilation.push_back(0x2000 | subroutine.return_address);
 	}
 
-	const string COMMAND_NAMES[3] = {
-		"CLRSCRN",
-		"SET",
-		"CALL"
+	// where A is the instruction
+	void AXNN(vector<string> args, int instruction) {
+		require_args(args, { get_literal_type("register"), get_literal_type("integer") });
+		int value = parser_return_values.top();
+		parser_return_values.pop();
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		instruction |= reg << 8;
+		instruction |= value;
+		compilation.push_back(instruction);
+	}
+
+	void skip_eq(vector<string> args) {
+		AXNN(args, 0x3000);
+	}
+
+	void skip_ne(vector<string> args) {
+		AXNN(args, 0x4000);
+	}
+
+	void add(vector<string> args) {
+		AXNN(args, 0x7000);
+	}
+
+	void font(vector<string> args) {
+		require_args(args, { get_literal_type("register") });
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction = 0xF029;
+		instruction |= reg << 8;
+		compilation.push_back(instruction);
+	}
+
+	void draw(vector<string> args) {
+		require_args(args, { get_literal_type("register"), get_literal_type("register"), get_literal_type("integer") });
+		int amount = parser_return_values.top();
+		parser_return_values.pop();
+		int reg_y = parser_return_values.top();
+		parser_return_values.pop();
+		int reg_x = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction = 0xD000;
+		instruction |= reg_x << 8;
+		instruction |= reg_y << 4;
+		instruction |= amount;
+		compilation.push_back(instruction);
+	}
+
+	struct Command {
+		string name;
+		void (c8asm::*handler)(vector<string>);
 	};
 
-	void (c8asm::*COMMAND_CALLBACKS[3])(vector<string>) = {
-		&c8asm::clear_screen,
-		&c8asm::set,
-		&c8asm::call_subroutine
+	const vector<Command> COMMANDS = {
+		{
+			"CLRSCRN",
+			&c8asm::clear_screen
+		},
+		{
+			"SET",
+			&c8asm::set
+		},
+		{
+			"ADD",
+			&c8asm::add
+		},
+		{
+			"CALL",
+			&c8asm::call_subroutine
+		},
+		{
+			"SKIP_EQ",
+			&c8asm::skip_eq
+		},
+		{
+			"SKIP_NE",
+			&c8asm::skip_ne
+		},
+		{
+			"FONT",
+			&c8asm::font
+		},
+		{
+			"DRAW",
+			&c8asm::draw
+		}
 	};
 
 	void handle_command(string command_name, vector<string> arguments) {
-		const char length = sizeof(COMMAND_NAMES) / sizeof(COMMAND_NAMES[0]);
-		for (int i = 0; i < length; i++) {
-			const string name = COMMAND_NAMES[i];
+		for (int i = 0; i < COMMANDS.size(); i++) {
+			const Command command = COMMANDS[i];
+			const string name = command.name;
 			if (command_name == name) {
-				void (c8asm::*callback_ptr)(vector<string>) = COMMAND_CALLBACKS[i];
+				void (c8asm::*callback_ptr)(vector<string>) = command.handler;
 				(this->*callback_ptr)(arguments);
 			}
 		}
@@ -224,18 +308,21 @@ private:
 		}
 		else if (first_char == '>') return;
 		else if (first_char == ':') {
-			cout << line.substr(1, string::npos) << endl;
+			string name = line.substr(1, string::npos);
+			// param number doesn't matter here because it never mentions it
+			is_address_name_literal_valid(name, 0);
 			subroutines.push_back(
 				address_name {
-					line.substr(1, string::npos),
+					name,
 					// plus N_PREFIXED_INSTRUCTIONS for the prefixed instructions
-					(compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2
+					512 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2
 				}
 			);
 			subroutine_depth++;
 		}
 		else if (first_char == ';') {
-			if (subroutine_depth == 0) fatal("Illegal return statement.", line_number);
+			// idk, sometimes you want to return early, and that would make this line annoying.
+			// if (subroutine_depth == 0) fatal("Illegal return statement.", line_number);
 			compilation.push_back(RETURN_SUBROUTINE);
 			subroutine_depth--;
 		}
@@ -273,25 +360,24 @@ public:
 	}
 
 	void save(const char* filename) {
-    int score = 1088;
-    FILE *hs;
+		FILE *hs;
 
-    /* create the file and write the value */
-    printf("Writing bytes..\n");
-    hs = fopen(filename,"w");
-    if (hs == NULL)
-    {
-        fprintf(stderr,"Error writing to %s\n",filename);
-        return;
-    }
-    for (int i = 0; i < compilation.size(); i++) {
+		/* create the file and write the value */
+		printf("Writing bytes..\n");
+		hs = fopen(filename,"w");
+		if (hs == NULL)
+		{
+			fprintf(stderr,"Error writing to %s\n",filename);
+			return;
+		}
+		for (int i = 0; i < compilation.size(); i++) {
 			short instruction = compilation[i];
 			char byte0 = (instruction & 0xFF00) >> 8;
 			char byte1 = instruction & 0xFF;
 			fwrite(&byte0, sizeof(char), 1, hs);
 			fwrite(&byte1, sizeof(char), 1, hs);
 		}
-    fclose(hs);
+		fclose(hs);
 	}
 
 	void parse(){
@@ -305,12 +391,12 @@ public:
 				line_number += 1;
 				continue;
 			}
-			if (c != '\t' && c != ' ')
+			if (c != '\t' && c != ' ' && c != 13)
 				line_buffer += c;
 		}
 		call_subroutine({ "main" });
 		compilation.insert(compilation.begin(), compilation[compilation.size()-1]);
 		compilation.pop_back();
-		compilation.insert(compilation.begin()+1, 0x1000 | (compilation.size()*2)+2);
+		compilation.insert(compilation.begin()+1, 0x1000 | 512+(compilation.size()*2)+2);
 	}
 };
