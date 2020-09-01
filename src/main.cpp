@@ -2,7 +2,7 @@
 
 int main()
 {
-	c8asm* assembler = new c8asm("test/test.asm");
+	c8asm* assembler = new c8asm("test/aaa.asm");
 
 	const char* output_filename = "output/output";
 
