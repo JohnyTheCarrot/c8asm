@@ -6,8 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CLEAR_SCREEN 0x00E0
-#define RETURN_SUBROUTINE 0x00EE
 #define N_PREFIXED_INSTRUCTIONS 3
 
 #pragma warning(disable:4018)
@@ -311,7 +309,7 @@ private:
 	**/
 
 	void clear_screen(vector<string> args) {
-		compilation.push_back(CLEAR_SCREEN);
+		compilation.push_back(opcode00EE);
 	}
 
 	void set(vector<string> args) {
@@ -489,7 +487,7 @@ private:
 		}
 		else if (first_char == ';') {
 			if (current_section == "data") fatal("Cannot return in data section.", line_number);
-			compilation.push_back(RETURN_SUBROUTINE);
+			compilation.push_back(opcode00EE);
 		}
 		else {
 			if (current_section == "data") {
