@@ -13,6 +13,7 @@
 #pragma warning(disable:4018)
 using namespace std;
 
+
 class c8asm{
 private:
 	// reading files
@@ -62,6 +63,49 @@ private:
 	stack<int> preprocessor_addresses;
 	// when a parser of a command returns an integer value, it'll be pushed to this stack for later use
 	stack<int> parser_return_values;
+
+
+	// opcode enums
+	enum opcodes{
+		
+		opcode00E0 = 0x00E0, //CLS
+		opcode00EE = 0x00EE, //RET
+		opcode0nnn = 0x0000, //SYS addr
+		opcode1nnn = 0x1000, //JP addr
+		opcode2nnn = 0x2000, //CALL addr
+		opcode3xkk = 0x3000, //SE Vx, byte
+		opcode4xkk = 0x4000, //SNE Vx, byte
+		opcode5xy0 = 0x5000, //SE Vx, Vy
+		opcode6xkk = 0x6000, //LD Vx, byte
+		opcode7xkk = 0x7000, //ADD Vx, byte
+		opcode8xy0 = 0x8000, //LD Vx, Vy
+		opcode8xy1 = 0x8001, //OR Vx, Vy
+		opcode8xy2 = 0x8002, //AND Vx, Vy
+		opcode8xy3 = 0x8003, //XOR Vx, Vy
+		opcode8xy4 = 0x8004, //ADD Vx, Vy
+		opcode8xy5 = 0x8005, //SUB Vx, Vy
+		opcode8xy6 = 0x8006, //SHR Vx {, Vy}
+		opcode8xy7 = 0x8007, //SUBN Vx, Vy
+		opcode8xyE = 0x800E, //SHL Vx {, Vy}
+		opcode9xy0 = 0x9000, //SNE Vx, Vy
+		opcodeAnnn = 0xA000, //LD I, addr
+		opcodeBnnn = 0xB000, //JP V0, addr
+		opcodeCxkk = 0xC000, //RND Vx, byte
+		opcodeDxyn = 0xD000, //DRW Vx, Vy, nibble
+		opcodeEx9E = 0xE09E, //SKP Vx
+		opcodeExA1 = 0xE0A1, //SKNP Vx
+		opcodeFx07 = 0xF007, //LD Vx, DT
+		opcodeFx0A = 0xF00A, //LD Vx, K
+		opcodeFx15 = 0xF015, //LD DT, Vx
+		opcodeFx18 = 0xF018, //LD ST, Vx
+		opcodeFx1E = 0xF01E, //ADD I, Vx
+		opcodeFx29 = 0xF029, //LD F, Vx
+		opcodeFx33 = 0xF033, //LD B, Vx
+		opcodeFx55 = 0xF055, //LD [I], Vx
+		opcodeFx65 = 0xF065, //LD Vx, [I]
+		
+
+	};
 
 	/**
 	##############################################################################################
@@ -164,8 +208,8 @@ private:
 
 	struct LiteralType {
 		const char* name;
-		void (c8asm::*is_valid)(string, int);
-		void (c8asm::*parser)(string);
+		void (c8asm::*is_address_name_literal_valid)(string, int);
+		void (c8asm::*parse_address_name_literal)(string);
 	};
 
 	vector<LiteralType> literal_types = {
@@ -253,8 +297,8 @@ private:
 			if (arg[arg.length() - 1] == (char)13) arg = arg.substr(0, arg.length() - 1);
 			LiteralType type = types[i];
 			// will exit the assembler if the literal isn't valid
-			(this->*type.is_valid)(arg, i);
-			(this->*type.parser)(arg);
+			(this->*type.is_address_name_literal_valid)(arg, i);
+			(this->*type.parse_address_name_literal)(arg);
 		}
 	}
 
@@ -276,7 +320,7 @@ private:
 		parser_return_values.pop();
 		int reg = parser_return_values.top();
 		parser_return_values.pop();
-		int instruction = 0x6000;
+		int instruction = opcode6xkk;
 		instruction |= reg << 8;
 		instruction |= value;
 		compilation.push_back(instruction);
@@ -290,7 +334,7 @@ private:
 	}
 
 	void call_subroutine(vector<string> args) {
-		address_based_instruction(args, 0x2000);
+		address_based_instruction(args, opcode2nnn);
 	}
 
 	// where A is the instruction
@@ -306,22 +350,22 @@ private:
 	}
 
 	void skip_eq(vector<string> args) {
-		AXNN(args, 0x3000);
+		AXNN(args, opcode3xkk);
 	}
 
 	void skip_ne(vector<string> args) {
-		AXNN(args, 0x4000);
+		AXNN(args, opcode4xkk);
 	}
 
 	void add(vector<string> args) {
-		AXNN(args, 0x7000);
+		AXNN(args, opcode7xkk);
 	}
 
 	void font(vector<string> args) {
 		require_args(args, { get_literal_type("register") });
 		int reg = parser_return_values.top();
 		parser_return_values.pop();
-		int instruction = 0xF029;
+		int instruction = opcodeFx29;
 		instruction |= reg << 8;
 		compilation.push_back(instruction);
 	}
@@ -334,7 +378,7 @@ private:
 		parser_return_values.pop();
 		int reg_x = parser_return_values.top();
 		parser_return_values.pop();
-		int instruction = 0xD000;
+		int instruction = opcodeDxyn;
 		instruction |= reg_x << 8;
 		instruction |= reg_y << 4;
 		instruction |= amount;
@@ -342,14 +386,14 @@ private:
 	}
 
 	void jump(vector<string> args) {
-		address_based_instruction(args, 0x1000);
+		address_based_instruction(args, opcode1nnn);
 	}
 
 	void set_index(vector<string> args) {
 		require_args(args, { get_literal_type("address_name") });
 		string arg = args[0];
 		address_name data_address = get_data_address(arg);
-		compilation.push_back(0xA000 | data_address.return_address);
+		compilation.push_back(opcodeAnnn | data_address.return_address);
 	}
 
 	struct Command {
@@ -358,43 +402,6 @@ private:
 	};
 
 	const vector<Command> COMMANDS = {
-		/*
-		00E0 - CLS
-		00EE - RET
-		0nnn - SYS addr
-		1nnn - JP addr
-		2nnn - CALL addr
-		3xkk - SE Vx, byte
-		4xkk - SNE Vx, byte
-		5xy0 - SE Vx, Vy
-		6xkk - LD Vx, byte
-		7xkk - ADD Vx, byte
-		8xy0 - LD Vx, Vy
-		8xy1 - OR Vx, Vy
-		8xy2 - AND Vx, Vy
-		8xy3 - XOR Vx, Vy
-		8xy4 - ADD Vx, Vy
-		8xy5 - SUB Vx, Vy
-		8xy6 - SHR Vx {, Vy}
-		8xy7 - SUBN Vx, Vy
-		8xyE - SHL Vx {, Vy}
-		9xy0 - SNE Vx, Vy
-		Annn - LD I, addr
-		Bnnn - JP V0, addr
-		Cxkk - RND Vx, byte
-		Dxyn - DRW Vx, Vy, nibble
-		Ex9E - SKP Vx
-		ExA1 - SKNP Vx
-		Fx07 - LD Vx, DT
-		Fx0A - LD Vx, K
-		Fx15 - LD DT, Vx
-		Fx18 - LD ST, Vx
-		Fx1E - ADD I, Vx
-		Fx29 - LD F, Vx
-		Fx33 - LD B, Vx
-		Fx55 - LD [I], Vx
-		Fx65 - LD Vx, [I]
-		*/
 		
 		{
 			"CLS",
