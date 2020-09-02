@@ -10,6 +10,7 @@
 #define RETURN_SUBROUTINE 0x00EE
 #define N_PREFIXED_INSTRUCTIONS 3
 
+#pragma warning(disable:4018)
 using namespace std;
 
 class c8asm{
