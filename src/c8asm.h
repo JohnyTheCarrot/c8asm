@@ -14,25 +14,31 @@ using namespace std;
 
 class c8asm{
 private:
+	// reading files
 	FILE* fp;
 	int fsize;
 	char* fmem;
-	string current_section;
-	int address;
-	vector<int> compilation;
-	vector<int> data;
-	int line_number = 1;
 
+	// text or data
+	string current_section;
+
+	// for the error messages
+	int line_number = 1;
 
 	struct address_name {
 		string name;
 		long unsigned int return_address;
 	};
 
-	vector<address_name> memory_addresses;
-	vector<address_name> subroutines;
-	int subroutine_depth = 0;
+	// .data bytes go here
+	vector<int> data;
+	// compiled .text ints go here
+	vector<int> compilation;
 
+	// this one is where the addresses for the .data section go
+	vector<address_name> memory_addresses;
+	// subroutine names & their respective addresses go here
+	vector<address_name> subroutines;
 
 	vector<string> split_string(string str, char token) {
 		string split_string_buffer;
@@ -51,10 +57,24 @@ private:
 		return split_string_vector;
 	}
 
-	stack<string> address_references;
+	// currently unused, see the comment at it's only usage
 	stack<int> preprocessor_addresses;
+	// when a parser of a command returns an integer value, it'll be pushed to this stack for later use
 	stack<int> parser_return_values;
 
+	/**
+	##############################################################################################
+	#																							 #
+	#									  Literal Validators									 #
+	#																							 #
+	##############################################################################################
+	**/
+
+	// check if:
+	//	literal starts with v
+	//	literal is 2 chars long, including the 'v'
+	// TODO:
+	//	Limit literal to v[0-9a-fA-F]
 	void is_register_literal_valid(string literal, int param_number) {
 		if (literal[0] != 'v' || literal.length() != 2)
 		{
@@ -65,11 +85,15 @@ private:
 		}
 	}
 
-	void parse_register_literal(string literal) {
-		int reg = stoi(string(1, literal[1]), nullptr, 16);
-		parser_return_values.push(reg);
-	}
 
+	// starts with 0x?
+	//	Yes: hexadecimal
+	//	No: decimal
+	//
+	// hexadecimal:
+	//	check if 0x[0-9a-fA-F]
+	// decimal:
+	//	check if [0-9]
 	void is_integer_literal_valid(string literal, int param_number) {
 		int start_index = 0;
 		bool hexadecimal = false;
@@ -92,16 +116,10 @@ private:
 		}
 	}
 
-	void parse_integer_literal(string literal) {
-		int number;
-		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x') {
-			number = stoi(literal.substr(2, string::npos), nullptr, 16);
-		} else {
-			number = stoi(literal, nullptr);
-		}
-		parser_return_values.push(number);
-	}
-
+	// check if:
+	//	[a-z0-9_-]
+	// TODO:
+	//	add support for [A-Z]
 	void is_address_name_literal_valid(string literal, int param_number) {
 		const char* allowed_characters = "abcdefghijklmnopqrstuvwxyz0123456789_-";
 		for (int i = 0; i < literal.length(); i++) {
@@ -114,9 +132,34 @@ private:
 		}
 	}
 
-	void parse_address_name_literal(string literal) {
-		address_references.push(literal);
+	// convert hexadecimal part of register literal (v[0-9a-fA-F]) to usable integer
+	// push usable integer to parser return value stack
+	void parse_register_literal(string literal) {
+		int reg = stoi(string(1, literal[1]), nullptr, 16);
+		parser_return_values.push(reg);
 	}
+	
+	// is hexadecimal? convert to int
+	// push int to parser return value stack
+	void parse_integer_literal(string literal) {
+		int number;
+		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x') {
+			number = stoi(literal.substr(2, string::npos), nullptr, 16);
+		} else {
+			number = stoi(literal, nullptr);
+		}
+		parser_return_values.push(number);
+	}
+	
+	void parse_address_name_literal(string literal) {}
+
+	/**
+	##############################################################################################
+	#																							 #
+	#									  Literal Definitions									 #
+	#																							 #
+	##############################################################################################
+	**/
 
 	struct LiteralType {
 		const char* name;
@@ -142,6 +185,31 @@ private:
 		}
 	};
 
+	/**
+	##############################################################################################
+	#																							 #
+	#											  Errors										 #
+	#																							 #
+	##############################################################################################
+	**/
+
+	void fatal(const char* message, int line_number) {
+		char buffer[200];
+		sprintf(buffer, "FATAL at %d: %s", line_number, message);
+		cout << buffer << endl;
+		exit(0);
+	}
+
+	/**
+	##############################################################################################
+	#																							 #
+	#											  Utils											 #
+	#																							 #
+	##############################################################################################
+	**/
+
+	// input: literal name
+	// output: LiteralType object tied to that name
 	LiteralType get_literal_type(string name) {
 		for (int i = 0; i < literal_types.size(); i++) {
 			LiteralType literal_type = literal_types[i];
@@ -151,13 +219,8 @@ private:
 		exit(1);
 	}
 
-	void fatal(const char* message, int line_number) {
-		char buffer[200];
-		sprintf(buffer, "FATAL at %d: %s", line_number, message);
-		cout << buffer << endl;
-		exit(0);
-	}
-
+	// resolve address name to actual address number
+	// this one is for .data
 	address_name get_data_address(string data_address_name) {
 		for (int i = 0; i < memory_addresses.size(); i++) {
 			address_name data_address = memory_addresses[i];
@@ -168,6 +231,8 @@ private:
 		fatal(buffer, line_number);
 	}
 
+	// resolve address name to actual address number
+	// this one is for .text
 	address_name get_subroutine(string subroutine_name) {
 		for (int i = 0; i < subroutines.size(); i++) {
 			address_name subroutine = subroutines[i];
@@ -178,6 +243,8 @@ private:
 		fatal(buffer, line_number);
 	}
 
+	// enforce requirement for specified argument types, use before handling said arguments
+	// TODO: enforce argument count
 	void require_args(vector<string> args, vector<LiteralType> types) {
 		for (int i = 0; i < types.size(); i++) {
 			string arg = args[i];
@@ -189,6 +256,14 @@ private:
 			(this->*type.parser)(arg);
 		}
 	}
+
+	/**
+	##############################################################################################
+	#																							 #
+	#										 Command Handlers									 #
+	#																							 #
+	##############################################################################################
+	**/
 
 	void clear_screen(vector<string> args) {
 		compilation.push_back(CLEAR_SCREEN);
@@ -425,6 +500,11 @@ private:
 				return;
 			}
 			vector<string> command_parts;
+			// currently unused
+			// this will be for storing an address in a stack in the assembler, and then when it's used resolve it.
+			// example:
+			// %ADD: v0, 1
+			// JP: %
 			if (first_char == '%') {
 				int address_next = 512 + 2 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2;
 				preprocessor_addresses.push(address_next);
