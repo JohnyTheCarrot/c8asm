@@ -7,9 +7,9 @@
 	:draw_character
 		FONT: v0
 		DRAW: v1, v2, 5
-		SKIP_NE: v0, 75
+		SKIP_NE: v0, 0xF
 		;
-		ADD: v0, 15
+		ADD: v0, 1
 		CLRSCRN:
 		CALL: draw_character
 	;

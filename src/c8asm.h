@@ -8,7 +8,7 @@
 
 #define CLEAR_SCREEN 0x00E0
 #define RETURN_SUBROUTINE 0x00EE
-#define N_PREFIXED_INSTRUCTIONS 2
+#define N_PREFIXED_INSTRUCTIONS 3
 
 using namespace std;
 
@@ -20,6 +20,7 @@ private:
 	string current_section;
 	int address;
 	vector<int> compilation;
+	vector<int> data;
 	int line_number = 1;
 
 
@@ -51,6 +52,7 @@ private:
 	}
 
 	stack<string> address_references;
+	stack<int> preprocessor_addresses;
 	stack<int> parser_return_values;
 
 	void is_register_literal_valid(string literal, int param_number) {
@@ -156,6 +158,16 @@ private:
 		exit(0);
 	}
 
+	address_name get_data_address(string data_address_name) {
+		for (int i = 0; i < memory_addresses.size(); i++) {
+			address_name data_address = memory_addresses[i];
+			if (data_address.name == data_address_name) return data_address;
+		}
+		char buffer[50];
+		sprintf(buffer, "Unknown data address name %s", data_address_name.c_str());
+		fatal(buffer, line_number);
+	}
+
 	address_name get_subroutine(string subroutine_name) {
 		for (int i = 0; i < subroutines.size(); i++) {
 			address_name subroutine = subroutines[i];
@@ -194,11 +206,15 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void call_subroutine(vector<string> args) {
+	void address_based_instruction(vector<string> args, int instruction) {
 		require_args(args, { get_literal_type("address_name") });
 		string arg = args[0];
 		address_name subroutine = get_subroutine(arg);
-		compilation.push_back(0x2000 | subroutine.return_address);
+		compilation.push_back(instruction | subroutine.return_address);
+	}
+
+	void call_subroutine(vector<string> args) {
+		address_based_instruction(args, 0x2000);
 	}
 
 	// where A is the instruction
@@ -247,6 +263,17 @@ private:
 		instruction |= reg_y << 4;
 		instruction |= amount;
 		compilation.push_back(instruction);
+	}
+
+	void jump(vector<string> args) {
+		address_based_instruction(args, 0x1000);
+	}
+
+	void set_index(vector<string> args) {
+		require_args(args, { get_literal_type("address_name") });
+		string arg = args[0];
+		address_name data_address = get_data_address(arg);
+		compilation.push_back(0xA000 | data_address.return_address);
 	}
 
 	struct Command {
@@ -310,22 +337,29 @@ private:
 			&c8asm::call_subroutine
 		},
 		{
-			"SKIP_EQ",
+			"SE",
 			&c8asm::skip_eq
 		},
 		{
-			"SKIP_NE",
+			"SNE",
 			&c8asm::skip_ne
 		},
 		{
-			"FONT",
+			"FNT",
 			&c8asm::font
 		},
 		{
-			"DRAW",
+			"DRW",
 			&c8asm::draw
 		},
-
+		{
+			"JP",
+			&c8asm::jump
+		},
+		{
+			"SETI",
+			&c8asm::set_index
+		}
 	};
 
 	void handle_command(string command_name, vector<string> arguments) {
@@ -335,38 +369,70 @@ private:
 			if (command_name == name) {
 				void (c8asm::*callback_ptr)(vector<string>) = command.handler;
 				(this->*callback_ptr)(arguments);
+				return;
 			}
 		}
+		char buffer[100];
+		sprintf(buffer, "Unknown command '%s'", command_name.c_str());
+		fatal(buffer, line_number);
 	}
 
 	void parse_line(string line) {
 		char first_char = line[0];
 		if (first_char == '.') {
 			current_section = line.substr(1, string::npos);
-			cout << current_section << endl;
 		}
 		else if (first_char == '>') return;
 		else if (first_char == ':') {
 			string name = line.substr(1, string::npos);
 			// param number doesn't matter here because it never mentions it
 			is_address_name_literal_valid(name, 0);
-			subroutines.push_back(
-				address_name {
-					name,
-					// plus N_PREFIXED_INSTRUCTIONS for the prefixed instructions
-					512 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2
-				}
-			);
-			subroutine_depth++;
+			if (current_section == "data") {
+				memory_addresses.push_back(
+					address_name{
+						name,
+						512 + data.size()
+					}
+				);
+			} else {
+				subroutines.push_back(
+					address_name {
+						name,
+						// plus N_PREFIXED_INSTRUCTIONS for the prefixed instructions
+						512 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2
+					}
+				);
+			}
 		}
 		else if (first_char == ';') {
-			// idk, sometimes you want to return early, and that would make this line annoying.
-			// if (subroutine_depth == 0) fatal("Illegal return statement.", line_number);
+			if (current_section == "data") fatal("Cannot return in data section.", line_number);
 			compilation.push_back(RETURN_SUBROUTINE);
-			subroutine_depth--;
 		}
 		else {
-			vector<string> command_parts = split_string(line, ':');
+			if (current_section == "data") {
+				// TODO: support decimal & hexadecimal
+				if (line.length() > 2 && line[0] == '0' && line[1] == 'b') {
+					string binary_literal = line.substr(2, string::npos);
+					for (int i = 0; i < binary_literal.length(); i++) {
+						char c = binary_literal[i];
+						const char* allowed_chars = "01";
+						if (strchr(allowed_chars, c) == nullptr)
+							fatal("Illegal character in binary literal.", line_number);
+					}
+					int binary_value = stoi(binary_literal, nullptr, 2);
+					data.push_back(binary_value);
+				}
+				return;
+			}
+			vector<string> command_parts;
+			if (first_char == '%') {
+				int address_next = 512 + 2 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2;
+				preprocessor_addresses.push(address_next);
+				command_parts = split_string(line.substr(1, string::npos), ':');
+			}
+			else {
+				command_parts = split_string(line, ':');
+			}
 			string command_name = command_parts[0];
 			vector<string> arguments;
 			if (command_parts.size() > 1) {
@@ -413,8 +479,21 @@ public:
 			short instruction = compilation[i];
 			char byte0 = (instruction & 0xFF00) >> 8;
 			char byte1 = instruction & 0xFF;
+			// offset all set index commands by the size of the compiled byte code
+			if ((byte0 & 0xF0) == 0xA0) {
+				int address = instruction & 0x0FFF;
+				cout << "b: " << address << endl;
+				address += compilation.size() * 2;
+				cout << "a: " << address << endl;
+				byte0 = 0xA0 | (address >> 8);
+				byte1 = address & 0xFF;
+			}
 			fwrite(&byte0, sizeof(char), 1, hs);
 			fwrite(&byte1, sizeof(char), 1, hs);
+		}
+		for (int i = 0; i < data.size(); i++) {
+			char sprite_line = data[i];
+			fwrite(&sprite_line, sizeof(char), 1, hs);
 		}
 		fclose(hs);
 	}
@@ -436,6 +515,7 @@ public:
 		call_subroutine({ "main" });
 		compilation.insert(compilation.begin(), compilation[compilation.size()-1]);
 		compilation.pop_back();
-		compilation.insert(compilation.begin()+1, 0x1000 | 512+(compilation.size()*2)+2);
+		compilation.insert(compilation.begin() + 1, 0x1000 | 512 + 2);
+		compilation.insert(compilation.begin() + 1, 0x1000 | 512 + 4);
 	}
 };
