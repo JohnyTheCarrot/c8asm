@@ -206,8 +206,8 @@ private:
 
 	struct LiteralType {
 		const char* name;
-		void (c8asm::*is_address_name_literal_valid)(string, int);
-		void (c8asm::*parse_address_name_literal)(string);
+		void (c8asm::*is_valid)(string, int);
+		void (c8asm::*parser)(string);
 	};
 
 	vector<LiteralType> literal_types = {
@@ -265,6 +265,7 @@ private:
 	// resolve address name to actual address number
 	// this one is for .data
 	address_name get_data_address(string data_address_name) {
+		cout << memory_addresses.size() << endl;
 		for (int i = 0; i < memory_addresses.size(); i++) {
 			address_name data_address = memory_addresses[i];
 			if (data_address.name == data_address_name) return data_address;
@@ -295,8 +296,8 @@ private:
 			if (arg[arg.length() - 1] == (char)13) arg = arg.substr(0, arg.length() - 1);
 			LiteralType type = types[i];
 			// will exit the assembler if the literal isn't valid
-			(this->*type.is_address_name_literal_valid)(arg, i);
-			(this->*type.parse_address_name_literal)(arg);
+			(this->*type.is_valid)(arg, i);
+			(this->*type.parser)(arg);
 		}
 	}
 
@@ -309,7 +310,7 @@ private:
 	**/
 
 	void clear_screen(vector<string> args) {
-		compilation.push_back(opcode00EE);
+		compilation.push_back(opcode00E0);
 	}
 
 	void set(vector<string> args) {
@@ -568,9 +569,7 @@ public:
 			// offset all set index commands by the size of the compiled byte code
 			if ((byte0 & 0xF0) == 0xA0) {
 				int address = instruction & 0x0FFF;
-				cout << "b: " << address << endl;
 				address += compilation.size() * 2;
-				cout << "a: " << address << endl;
 				byte0 = 0xA0 | (address >> 8);
 				byte1 = address & 0xFF;
 			}
