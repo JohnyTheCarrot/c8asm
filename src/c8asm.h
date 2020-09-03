@@ -101,8 +101,6 @@ private:
 		opcodeFx33 = 0xF033, //LD B, Vx
 		opcodeFx55 = 0xF055, //LD [I], Vx
 		opcodeFx65 = 0xF065, //LD Vx, [I]
-		
-
 	};
 
 	/**
@@ -395,6 +393,24 @@ private:
 		compilation.push_back(opcodeAnnn | data_address.return_address);
 	}
 
+	void add_index(vector<string> args) {
+		require_args(args, { get_literal_type("register") });
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction = opcodeFx1E;
+		instruction |= reg << 8;
+		compilation.push_back(instruction);
+	}
+
+	void get_key(vector<string> args) {
+		require_args(args, { get_literal_type("register") });
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction = opcodeFx0A;
+		instruction |= reg << 8;
+		compilation.push_back(instruction);
+	}
+
 	struct Command {
 		string name;
 		void (c8asm::*handler)(vector<string>);
@@ -441,6 +457,14 @@ private:
 		{
 			"SETI",
 			&c8asm::set_index
+		},
+		{
+			"ADDI",
+			&c8asm::add_index
+		},
+		{
+			"GETK",
+			&c8asm::get_key
 		}
 	};
 
