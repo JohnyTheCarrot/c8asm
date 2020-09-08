@@ -2,22 +2,29 @@
 #include <vector>
 #include <stack>
 #include <string>
+#include <bitset>
 #include <cstring>
 #include <stdio.h>
 #include <stdlib.h>
 
+extern "C"
+{
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+}
+
 #define N_PREFIXED_INSTRUCTIONS 3
 
-#pragma warning(disable:4018)
+#pragma warning(disable : 4018)
 using namespace std;
 
-
-class c8asm{
+class c8asm
+{
 private:
 	// reading files
-	FILE* fp;
+	FILE *fp;
 	int fsize;
-	char* fmem;
+	char *fmem;
 
 	// text or data
 	string current_section;
@@ -25,7 +32,8 @@ private:
 	// for the error messages
 	int line_number = 1;
 
-	struct address_name {
+	struct address_name
+	{
 		string name;
 		long unsigned int return_address;
 	};
@@ -40,10 +48,12 @@ private:
 	// subroutine names & their respective addresses go here
 	vector<address_name> subroutines;
 
-	vector<string> split_string(string str, char token) {
+	vector<string> split_string(string str, char token)
+	{
 		string split_string_buffer;
 		vector<string> split_string_vector;
-		for (int i = 0; i < str.size(); i++) {
+		for (int i = 0; i < str.size(); i++)
+		{
 			if (str[i] == token)
 			{
 				split_string_vector.push_back(split_string_buffer);
@@ -62,10 +72,10 @@ private:
 	// when a parser of a command returns an integer value, it'll be pushed to this stack for later use
 	stack<int> parser_return_values;
 
-
 	// opcode enums
-	enum opcodes{
-		
+	enum opcodes
+	{
+
 		opcode00E0 = 0x00E0, //CLS
 		opcode00EE = 0x00EE, //RET
 		opcode0nnn = 0x0000, //SYS addr
@@ -116,7 +126,8 @@ private:
 	//	literal is 2 chars long, including the 'v'
 	// TODO:
 	//	Limit literal to v[0-9a-fA-F]
-	void is_register_literal_valid(string literal, int param_number) {
+	void is_register_literal_valid(string literal, int param_number)
+	{
 		if (literal[0] != 'v' || literal.length() != 2)
 		{
 			const char format_string[104] = "Invalid argument. Argument %d must be a register. (format 'vx' where x is a hexadecimal value from 0-F)";
@@ -126,7 +137,6 @@ private:
 		}
 	}
 
-
 	// starts with 0x?
 	//	Yes: hexadecimal
 	//	No: decimal
@@ -135,21 +145,25 @@ private:
 	//	check if 0x[0-9a-fA-F]
 	// decimal:
 	//	check if [0-9]
-	void is_integer_literal_valid(string literal, int param_number) {
+	void is_integer_literal_valid(string literal, int param_number)
+	{
 		int start_index = 0;
 		bool hexadecimal = false;
-		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x') {
+		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x')
+		{
 			start_index = 2;
 			hexadecimal = true;
 		}
-		for (int i = start_index; i < literal.length(); i++) {
+		for (int i = start_index; i < literal.length(); i++)
+		{
 			char c = tolower(literal[i]);
-			const char* decimal_characters;
+			const char *decimal_characters;
 			if (hexadecimal)
 				decimal_characters = "0123456789abcdef";
 			else
-				decimal_characters = "0123456789";
-			if (strchr(decimal_characters, c) == nullptr) {
+				decimal_characters = "0123456789-";
+			if (strchr(decimal_characters, c) == nullptr)
+			{
 				char error_message_buffer[100];
 				sprintf(error_message_buffer, "Illegal character '%c' in integer literal at parameter %d", c, param_number);
 				fatal(error_message_buffer, line_number);
@@ -161,11 +175,14 @@ private:
 	//	[a-z0-9_-]
 	// TODO:
 	//	add support for [A-Z]
-	void is_address_name_literal_valid(string literal, int param_number) {
-		const char* allowed_characters = "abcdefghijklmnopqrstuvwxyz0123456789_-";
-		for (int i = 0; i < literal.length(); i++) {
+	void is_address_name_literal_valid(string literal, int param_number)
+	{
+		const char *allowed_characters = "abcdefghijklmnopqrstuvwxyz0123456789_-";
+		for (int i = 0; i < literal.length(); i++)
+		{
 			char c = literal[i];
-			if (strchr(allowed_characters, c) == nullptr) {
+			if (strchr(allowed_characters, c) == nullptr)
+			{
 				char buffer[100];
 				sprintf(buffer, "Illegal character '%c' at %d", c, i);
 				fatal(buffer, line_number);
@@ -173,26 +190,43 @@ private:
 		}
 	}
 
+	void is_filename_literal_valid(string literal, int param_number) {}
+
+	/**
+	##############################################################################################
+	#																							 #
+	#										 Literal Parsers									 #
+	#																							 #
+	##############################################################################################
+	**/
+
 	// convert hexadecimal part of register literal (v[0-9a-fA-F]) to usable integer
 	// push usable integer to parser return value stack
-	void parse_register_literal(string literal) {
+	void parse_register_literal(string literal)
+	{
 		int reg = stoi(string(1, literal[1]), nullptr, 16);
 		parser_return_values.push(reg);
 	}
-	
+
 	// is hexadecimal? convert to int
 	// push int to parser return value stack
-	void parse_integer_literal(string literal) {
+	void parse_integer_literal(string literal)
+	{
 		int number;
-		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x') {
+		if (literal.length() > 2 && literal[0] == '0' && literal[1] == 'x')
+		{
 			number = stoi(literal.substr(2, string::npos), nullptr, 16);
-		} else {
+		}
+		else
+		{
 			number = stoi(literal, nullptr);
 		}
 		parser_return_values.push(number);
 	}
-	
+
 	void parse_address_name_literal(string literal) {}
+
+	void parse_filename_literal(string literal) {}
 
 	/**
 	##############################################################################################
@@ -202,29 +236,26 @@ private:
 	##############################################################################################
 	**/
 
-	struct LiteralType {
-		const char* name;
+	struct LiteralType
+	{
+		const char *name;
 		void (c8asm::*is_valid)(string, int);
 		void (c8asm::*parser)(string);
 	};
 
 	vector<LiteralType> literal_types = {
-		{
-			"address_name",
-			&c8asm::is_address_name_literal_valid,
-			&c8asm::parse_address_name_literal
-		},
-		{
-			"register",
-			&c8asm::is_register_literal_valid,
-			&c8asm::parse_register_literal
-		},
-		{
-			"integer",
-			&c8asm::is_integer_literal_valid,
-			&c8asm::parse_integer_literal
-		}
-	};
+			{"address_name",
+			 &c8asm::is_address_name_literal_valid,
+			 &c8asm::parse_address_name_literal},
+			{"register",
+			 &c8asm::is_register_literal_valid,
+			 &c8asm::parse_register_literal},
+			{"integer",
+			 &c8asm::is_integer_literal_valid,
+			 &c8asm::parse_integer_literal},
+			{"filename",
+			 &c8asm::is_filename_literal_valid,
+			 &c8asm::parse_filename_literal}};
 
 	/**
 	##############################################################################################
@@ -234,7 +265,8 @@ private:
 	##############################################################################################
 	**/
 
-	void fatal(const char* message, int line_number) {
+	[[noreturn]] void fatal(const char *message, int line_number)
+	{
 		char buffer[200];
 		sprintf(buffer, "FATAL at %d: %s", line_number, message);
 		cout << buffer << endl;
@@ -251,22 +283,42 @@ private:
 
 	// input: literal name
 	// output: LiteralType object tied to that name
-	LiteralType get_literal_type(string name) {
-		for (int i = 0; i < literal_types.size(); i++) {
+	LiteralType get_literal_type(string name)
+	{
+		for (int i = 0; i < literal_types.size(); i++)
+		{
 			LiteralType literal_type = literal_types[i];
-			if (literal_type.name == name) return literal_type;
+			if (literal_type.name == name)
+				return literal_type;
 		}
 		cout << "Unknown LiteralType" << endl;
 		exit(1);
 	}
 
+	struct address_request
+	{
+		string name;
+		// address of instruction that requested this address
+		int request_compilation_address;
+		// line number of request
+		int line_number;
+		// instruction opcode to use
+		int opcode;
+		// data or text
+		string section;
+	};
+
+	vector<address_request> address_requests;
+
 	// resolve address name to actual address number
 	// this one is for .data
-	address_name get_data_address(string data_address_name) {
-		cout << memory_addresses.size() << endl;
-		for (int i = 0; i < memory_addresses.size(); i++) {
+	address_name get_data_address(string data_address_name)
+	{
+		for (int i = 0; i < memory_addresses.size(); i++)
+		{
 			address_name data_address = memory_addresses[i];
-			if (data_address.name == data_address_name) return data_address;
+			if (data_address.name == data_address_name)
+				return data_address;
 		}
 		char buffer[50];
 		sprintf(buffer, "Unknown data address name %s", data_address_name.c_str());
@@ -275,10 +327,13 @@ private:
 
 	// resolve address name to actual address number
 	// this one is for .text
-	address_name get_subroutine(string subroutine_name) {
-		for (int i = 0; i < subroutines.size(); i++) {
+	address_name get_subroutine(string subroutine_name)
+	{
+		for (int i = 0; i < subroutines.size(); i++)
+		{
 			address_name subroutine = subroutines[i];
-			if (subroutine.name == subroutine_name) return subroutine;
+			if (subroutine.name == subroutine_name)
+				return subroutine;
 		}
 		char buffer[50];
 		sprintf(buffer, "Unknown subroutine %s", subroutine_name.c_str());
@@ -287,11 +342,14 @@ private:
 
 	// enforce requirement for specified argument types, use before handling said arguments
 	// TODO: enforce argument count
-	void require_args(vector<string> args, vector<LiteralType> types) {
-		for (int i = 0; i < types.size(); i++) {
+	void require_args(vector<string> args, vector<LiteralType> types)
+	{
+		for (int i = 0; i < types.size(); i++)
+		{
 			string arg = args[i];
 			// remove carriage return
-			if (arg[arg.length() - 1] == (char)13) arg = arg.substr(0, arg.length() - 1);
+			if (arg[arg.length() - 1] == (char)13)
+				arg = arg.substr(0, arg.length() - 1);
 			LiteralType type = types[i];
 			// will exit the assembler if the literal isn't valid
 			(this->*type.is_valid)(arg, i);
@@ -307,12 +365,14 @@ private:
 	##############################################################################################
 	**/
 
-	void clear_screen(vector<string> args) {
+	void clear_screen(vector<string> args)
+	{
 		compilation.push_back(opcode00E0);
 	}
 
-	void set(vector<string> args) {
-		require_args(args, { get_literal_type("register"), get_literal_type("integer") });
+	void set(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
 		int value = parser_return_values.top();
 		parser_return_values.pop();
 		int reg = parser_return_values.top();
@@ -323,20 +383,42 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void address_based_instruction(vector<string> args, int instruction) {
-		require_args(args, { get_literal_type("address_name") });
-		string arg = args[0];
-		address_name subroutine = get_subroutine(arg);
-		compilation.push_back(instruction | subroutine.return_address);
+	void set_to_register(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("register")});
+		int reg_y = parser_return_values.top();
+		parser_return_values.pop();
+		int reg_x = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction = opcode8xy0;
+		instruction |= reg_x << 8;
+		instruction |= reg_y << 4;
+		compilation.push_back(instruction);
 	}
 
-	void call_subroutine(vector<string> args) {
+	void address_based_instruction(vector<string> args, int instruction)
+	{
+		require_args(args, {get_literal_type("address_name")});
+		string arg = args[0];
+		address_requests.push_back(
+				address_request{
+						arg,
+						compilation.size(),
+						line_number,
+						instruction,
+						"text"});
+		compilation.push_back(0x0);
+	}
+
+	void call_subroutine(vector<string> args)
+	{
 		address_based_instruction(args, opcode2nnn);
 	}
 
 	// where A is the instruction
-	void AXNN(vector<string> args, int instruction) {
-		require_args(args, { get_literal_type("register"), get_literal_type("integer") });
+	void AXNN(vector<string> args, int instruction)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
 		int value = parser_return_values.top();
 		parser_return_values.pop();
 		int reg = parser_return_values.top();
@@ -346,20 +428,51 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void skip_eq(vector<string> args) {
+	void skip_eq(vector<string> args)
+	{
 		AXNN(args, opcode3xkk);
 	}
 
-	void skip_ne(vector<string> args) {
+	void skip_ne(vector<string> args)
+	{
 		AXNN(args, opcode4xkk);
 	}
 
-	void add(vector<string> args) {
+	void add(vector<string> args)
+	{
 		AXNN(args, opcode7xkk);
 	}
 
-	void font(vector<string> args) {
-		require_args(args, { get_literal_type("register") });
+	void register_condition(vector<string> args, bool eq)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("register")});
+		int reg_y = parser_return_values.top();
+		parser_return_values.pop();
+		int reg_x = parser_return_values.top();
+		parser_return_values.pop();
+		int instruction;
+		if (eq)
+			instruction = opcode5xy0;
+		else
+			instruction = opcode9xy0;
+		instruction |= reg_x << 8;
+		instruction |= reg_y << 4;
+		compilation.push_back(instruction);
+	}
+
+	void skip_register_eq(vector<string> args)
+	{
+		register_condition(args, true);
+	}
+
+	void skip_register_ne(vector<string> args)
+	{
+		register_condition(args, false);
+	}
+
+	void font(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register")});
 		int reg = parser_return_values.top();
 		parser_return_values.pop();
 		int instruction = opcodeFx29;
@@ -367,8 +480,9 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void draw(vector<string> args) {
-		require_args(args, { get_literal_type("register"), get_literal_type("register"), get_literal_type("integer") });
+	void draw(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("register"), get_literal_type("integer")});
 		int amount = parser_return_values.top();
 		parser_return_values.pop();
 		int reg_y = parser_return_values.top();
@@ -382,19 +496,30 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void jump(vector<string> args) {
+	void jump(vector<string> args)
+	{
 		address_based_instruction(args, opcode1nnn);
 	}
 
-	void set_index(vector<string> args) {
-		require_args(args, { get_literal_type("address_name") });
+	void set_index(vector<string> args)
+	{
+		require_args(args, {get_literal_type("address_name")});
 		string arg = args[0];
-		address_name data_address = get_data_address(arg);
-		compilation.push_back(opcodeAnnn | data_address.return_address);
+		address_requests.push_back(
+				address_request{
+						arg,
+						compilation.size(),
+						line_number,
+						0,
+						"data"});
+		// push null byte
+		// this will serve as a placeholder to be replaced by the actual instruction once the address is resolved
+		compilation.push_back(0);
 	}
 
-	void add_index(vector<string> args) {
-		require_args(args, { get_literal_type("register") });
+	void add_index(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register")});
 		int reg = parser_return_values.top();
 		parser_return_values.pop();
 		int instruction = opcodeFx1E;
@@ -402,8 +527,9 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void get_key(vector<string> args) {
-		require_args(args, { get_literal_type("register") });
+	void get_key(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register")});
 		int reg = parser_return_values.top();
 		parser_return_values.pop();
 		int instruction = opcodeFx0A;
@@ -411,68 +537,128 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	struct Command {
+	void load_sprite(vector<string> args)
+	{
+		require_args(args, {get_literal_type("integer"),
+												get_literal_type("integer"),
+												get_literal_type("integer"),
+												get_literal_type("filename")});
+		const int height = parser_return_values.top();
+		parser_return_values.pop();
+		int coord_y = parser_return_values.top();
+		parser_return_values.pop();
+		int coord_x = parser_return_values.top();
+		parser_return_values.pop();
+		string filename = args[3];
+
+		// width, height, n_channels
+		int x, y, n;
+		unsigned char *img_data = stbi_load(filename.c_str(), &x, &y, &n, 4);
+
+		char sprite[height] = {0};
+
+		if (img_data != nullptr && x > 0 && y > 0)
+		{
+			int i = ((coord_y * x) + coord_x) * 4;
+			for (int i_y = 0; i_y < height; i_y++)
+			{
+				for (int i_x = 0; i_x < 8; i_x++)
+				{
+					bool on =
+							img_data[i] == 0 &&
+							img_data[i + 1] == 0 &&
+							img_data[i + 2] == 0 &&
+							img_data[i + 3] == 255;
+					sprite[i_y] |= on << (7 - i_x);
+					i += 4;
+				}
+				i += (x - 8) * 4;
+			}
+		}
+		else
+		{
+			fatal("An error occurred whilst reading file", line_number);
+		}
+		for (int i = 0; i < height; i++)
+		{
+			char line = sprite[i];
+			data.push_back(line);
+		}
+		stbi_image_free(img_data);
+	}
+
+	void rand(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
+		int byte = parser_return_values.top();
+		parser_return_values.pop();
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		compilation.push_back(opcodeCxkk | (reg << 8) | byte);
+	}
+
+	void subtract(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("register")});
+		int reg_y = parser_return_values.top();
+		parser_return_values.pop();
+		int reg_x = parser_return_values.top();
+		parser_return_values.pop();
+		compilation.push_back(opcode8xy5 | (reg_x << 8) | (reg_y << 4));
+	}
+
+	struct Command
+	{
 		string name;
 		void (c8asm::*handler)(vector<string>);
 	};
 
 	const vector<Command> COMMANDS = {
-		
-		{
-			"CLS",
-			&c8asm::clear_screen
-		},
-		{
-			"SET",
-			&c8asm::set
-		},
-		{
-			"ADD",
-			&c8asm::add
-		},
-		{
-			"CALL",
-			&c8asm::call_subroutine
-		},
-		{
-			"SE",
-			&c8asm::skip_eq
-		},
-		{
-			"SNE",
-			&c8asm::skip_ne
-		},
-		{
-			"FNT",
-			&c8asm::font
-		},
-		{
-			"DRW",
-			&c8asm::draw
-		},
-		{
-			"JP",
-			&c8asm::jump
-		},
-		{
-			"SETI",
-			&c8asm::set_index
-		},
-		{
-			"ADDI",
-			&c8asm::add_index
-		},
-		{
-			"GETK",
-			&c8asm::get_key
-		}
-	};
+			{"CLS",
+			 &c8asm::clear_screen},
+			{"SET",
+			 &c8asm::set},
+			{"SETR",
+			 &c8asm::set_to_register},
+			{"ADD",
+			 &c8asm::add},
+			{"SUB",
+			 &c8asm::subtract},
+			{"CALL",
+			 &c8asm::call_subroutine},
+			{"SE",
+			 &c8asm::skip_eq},
+			{"SNE",
+			 &c8asm::skip_ne},
+			{"SRE",
+			 &c8asm::skip_register_eq},
+			{"SNRE",
+			 &c8asm::skip_register_ne},
+			{"FNT",
+			 &c8asm::font},
+			{"DRW",
+			 &c8asm::draw},
+			{"JP",
+			 &c8asm::jump},
+			{"SETI",
+			 &c8asm::set_index},
+			{"ADDI",
+			 &c8asm::add_index},
+			{"GETK",
+			 &c8asm::get_key},
+			{"LDSP",
+			 &c8asm::load_sprite},
+			{"RND",
+			 &c8asm::rand}};
 
-	void handle_command(string command_name, vector<string> arguments) {
-		for (int i = 0; i < COMMANDS.size(); i++) {
+	void handle_command(string command_name, vector<string> arguments)
+	{
+		for (int i = 0; i < COMMANDS.size(); i++)
+		{
 			const Command command = COMMANDS[i];
 			const string name = command.name;
-			if (command_name == name) {
+			if (command_name == name)
+			{
 				void (c8asm::*callback_ptr)(vector<string>) = command.handler;
 				(this->*callback_ptr)(arguments);
 				return;
@@ -483,79 +669,140 @@ private:
 		fatal(buffer, line_number);
 	}
 
-	void parse_line(string line) {
+	void parse_line(string line)
+	{
 		char first_char = line[0];
-		if (first_char == '.') {
+		if (first_char == '.')
+		{
 			current_section = line.substr(1, string::npos);
 		}
-		else if (first_char == '>') return;
-		else if (first_char == ':') {
+		else if (first_char == '>')
+			return;
+		else if (first_char == ':')
+		{
 			string name = line.substr(1, string::npos);
 			// param number doesn't matter here because it never mentions it
 			is_address_name_literal_valid(name, 0);
-			if (current_section == "data") {
+			if (current_section == "data")
+			{
 				memory_addresses.push_back(
-					address_name{
-						name,
-						512 + data.size()
-					}
-				);
-			} else {
+						address_name{
+								name,
+								512 + data.size()});
+			}
+			else
+			{
 				subroutines.push_back(
-					address_name {
-						name,
-						// plus N_PREFIXED_INSTRUCTIONS for the prefixed instructions
-						512 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2
-					}
-				);
+						address_name{
+								name,
+								// plus N_PREFIXED_INSTRUCTIONS for the prefixed instructions
+								512 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2});
 			}
 		}
-		else if (first_char == ';') {
-			if (current_section == "data") fatal("Cannot return in data section.", line_number);
+		else if (first_char == ';')
+		{
+			if (current_section == "data")
+				fatal("Cannot return in data section.", line_number);
 			compilation.push_back(opcode00EE);
 		}
-		else {
-			if (current_section == "data") {
+		else
+		{
+			vector<string> command_parts;
+			if (current_section == "data")
+			{
 				// TODO: support decimal & hexadecimal
-				if (line.length() > 2 && line[0] == '0' && line[1] == 'b') {
+				if (line.length() > 2 && line[0] == '0' && line[1] == 'b')
+				{
 					string binary_literal = line.substr(2, string::npos);
-					for (int i = 0; i < binary_literal.length(); i++) {
+					for (int i = 0; i < binary_literal.length(); i++)
+					{
 						char c = binary_literal[i];
-						const char* allowed_chars = "01";
+						const char *allowed_chars = "01";
 						if (strchr(allowed_chars, c) == nullptr)
 							fatal("Illegal character in binary literal.", line_number);
 					}
 					int binary_value = stoi(binary_literal, nullptr, 2);
 					data.push_back(binary_value);
 				}
+				else
+				{
+					command_parts = split_string(line, ':');
+					string command_name = command_parts[0];
+					vector<string> arguments;
+					if (command_parts.size() > 1)
+					{
+						arguments = split_string(command_parts[1], ',');
+					}
+					if (command_name == "LDSP")
+						handle_command(command_name, arguments);
+				}
 				return;
 			}
-			vector<string> command_parts;
 			// currently unused
 			// this will be for storing an address in a stack in the assembler, and then when it's used resolve it.
 			// example:
 			// %ADD: v0, 1
 			// JP: %
-			if (first_char == '%') {
+			if (first_char == '%')
+			{
 				int address_next = 512 + 2 + (compilation.size() + N_PREFIXED_INSTRUCTIONS) * 2;
 				preprocessor_addresses.push(address_next);
 				command_parts = split_string(line.substr(1, string::npos), ':');
 			}
-			else {
+			else
+			{
 				command_parts = split_string(line, ':');
 			}
 			string command_name = command_parts[0];
 			vector<string> arguments;
-			if (command_parts.size() > 1) {
+			if (command_parts.size() > 1)
+			{
 				arguments = split_string(command_parts[1], ',');
 			}
 			handle_command(command_name, arguments);
 		}
 	}
 
+	// resolve all data address references
+	// called after compilation
+	void
+	resolve_data_address_references()
+	{
+		for (int i = 0; i < address_requests.size(); i++)
+		{
+			address_request ar = address_requests[i];
+			string name = ar.name;
+			string section = ar.section;
+			if (section != "data")
+				continue;
+			line_number = ar.line_number;
+			address_name address = get_data_address(name);
+			compilation[ar.request_compilation_address] = opcodeAnnn | address.return_address;
+		}
+	}
+
+	// resolve all text address references
+	// called after compilation
+	void resolve_text_address_references()
+	{
+		for (int i = 0; i < address_requests.size(); i++)
+		{
+			address_request ar = address_requests[i];
+			string name = ar.name;
+			string section = ar.section;
+			if (section != "text")
+				continue;
+			line_number = ar.line_number;
+			address_name address = get_subroutine(name);
+			compilation[ar.request_compilation_address] = ar.opcode | address.return_address;
+		}
+	}
+
 public:
-	c8asm(const char* str) {
-		if (!(fp = fopen(str, "r"))) {
+	c8asm(const char *str)
+	{
+		if (!(fp = fopen(str, "r")))
+		{
 			fprintf(stderr, "failed to open %s.\n", str);
 			exit(1);
 		}
@@ -565,33 +812,37 @@ public:
 		fseek(fp, 0l, SEEK_SET);
 
 		//allocate memory
-		fmem = (char*)malloc(sizeof(char) * fsize);
-		for (int i = 0; i < fsize; i++) {
+		fmem = (char *)malloc(sizeof(char) * fsize);
+		for (int i = 0; i < fsize; i++)
+		{
 			fmem[i] = fgetc(fp);
 		}
 		fclose(fp);
 	}
-	~c8asm() {
+	~c8asm()
+	{
 		free(fmem);
 	}
 
-	void save(const char* filename) {
+	void save(const char *filename)
+	{
 		FILE *hs;
 
 		/* create the file and write the value */
-		printf("Writing bytes..\n");
-		hs = fopen(filename,"w");
+		hs = fopen(filename, "w");
 		if (hs == NULL)
 		{
-			fprintf(stderr,"Error writing to %s\n",filename);
+			fprintf(stderr, "Error writing to %s\n", filename);
 			return;
 		}
-		for (int i = 0; i < compilation.size(); i++) {
+		for (int i = 0; i < compilation.size(); i++)
+		{
 			short instruction = compilation[i];
 			char byte0 = (instruction & 0xFF00) >> 8;
 			char byte1 = instruction & 0xFF;
 			// offset all set index commands by the size of the compiled byte code
-			if ((byte0 & 0xF0) == 0xA0) {
+			if ((byte0 & 0xF0) == 0xA0)
+			{
 				int address = instruction & 0x0FFF;
 				address += compilation.size() * 2;
 				byte0 = 0xA0 | (address >> 8);
@@ -600,31 +851,44 @@ public:
 			fwrite(&byte0, sizeof(char), 1, hs);
 			fwrite(&byte1, sizeof(char), 1, hs);
 		}
-		for (int i = 0; i < data.size(); i++) {
+		for (int i = 0; i < data.size(); i++)
+		{
 			char sprite_line = data[i];
 			fwrite(&sprite_line, sizeof(char), 1, hs);
 		}
 		fclose(hs);
 	}
 
-	void parse(){
+	void parse()
+	{
+		cout << "Starting compilation.." << endl;
 		string line_buffer;
-		for (int i = 0; i < fsize; i++) {
+		for (int i = 0; i < fsize; i++)
+		{
 			char c = fmem[i];
-			if (c == '\n') {
-				
+			if (c == '\n')
+			{
+				// skip empty lines
+				if (line_buffer.length() == 0)
+				{
+					line_number++;
+					continue;
+				}
 				parse_line(line_buffer);
 				line_buffer.clear();
-				line_number += 1;
+				line_number++;
 				continue;
 			}
 			if (c != '\t' && c != ' ' && c != 13)
 				line_buffer += c;
 		}
-		call_subroutine({ "main" });
-		compilation.insert(compilation.begin(), compilation[compilation.size()-1]);
+		call_subroutine({"main"});
+		resolve_data_address_references();
+		resolve_text_address_references();
+		compilation.insert(compilation.begin(), compilation[compilation.size() - 1]);
 		compilation.pop_back();
 		compilation.insert(compilation.begin() + 1, 0x1000 | 512 + 2);
 		compilation.insert(compilation.begin() + 1, 0x1000 | 512 + 4);
+		cout << "Compilation successful." << endl;
 	}
 };

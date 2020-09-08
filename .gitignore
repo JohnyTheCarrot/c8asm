@@ -1,3 +1,6 @@
 
 .vs/
+.vscode/
+.file.swp
 build/
+output/
