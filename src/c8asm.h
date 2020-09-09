@@ -597,14 +597,59 @@ private:
 		compilation.push_back(opcodeCxkk | (reg << 8) | byte);
 	}
 
-	void subtract(vector<string> args)
+	// A & B = nibble 0 and 3 of instruction
+	// X & Y = registers X and Y
+	void AXYB(vector<string> args, int instruction)
 	{
 		require_args(args, {get_literal_type("register"), get_literal_type("register")});
 		int reg_y = parser_return_values.top();
 		parser_return_values.pop();
 		int reg_x = parser_return_values.top();
 		parser_return_values.pop();
-		compilation.push_back(opcode8xy5 | (reg_x << 8) | (reg_y << 4));
+		compilation.push_back(instruction | (reg_x << 8) | (reg_y << 4));
+	}
+
+	void bitwise_or(vector<string> args)
+	{
+		AXYB(args, opcode8xy1);
+	}
+
+	void bitwise_and(vector<string> args)
+	{
+		AXYB(args, opcode8xy2);
+	}
+
+	void bitwise_xor(vector<string> args)
+	{
+		AXYB(args, opcode8xy3);
+	}
+
+	void add_registers(vector<string> args)
+	{
+		AXYB(args, opcode8xy4);
+	}
+
+	void subtract_registers(vector<string> args)
+	{
+		AXYB(args, opcode8xy5);
+	}
+
+	void bitwise_shr_xy(vector<string> args)
+	{
+		AXYB(args, opcode8xy6);
+	}
+
+	void subn(vector<string> args)
+	{
+		AXYB(args, opcode8xy7);
+	}
+
+	void bitwise_shr_x(vector<string> args)
+	{
+		require_args(args, {get_literal_type("register")});
+		int reg_x = parser_return_values.top();
+		parser_return_values.pop();
+		compilation.push_back(opcode8xy6 | (reg_x << 8));
 	}
 
 	struct Command
@@ -622,8 +667,22 @@ private:
 			 &c8asm::set_to_register},
 			{"ADD",
 			 &c8asm::add},
-			{"SUB",
-			 &c8asm::subtract},
+			{"OR",
+			 &c8asm::bitwise_or},
+			{"AND",
+			 &c8asm::bitwise_and},
+			{"XOR",
+			 &c8asm::bitwise_xor},
+			{"ADDR",
+			 &c8asm::add_registers},
+			{"SUBR",
+			 &c8asm::subtract_registers},
+			{"SHRXY",
+			 &c8asm::bitwise_shr_xy},
+			{"SHRX",
+			 &c8asm::bitwise_shr_x},
+			{"SUBN",
+			 &c8asm::subn},
 			{"CALL",
 			 &c8asm::call_subroutine},
 			{"SE",
