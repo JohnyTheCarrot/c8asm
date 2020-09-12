@@ -396,7 +396,7 @@ private:
 		compilation.push_back(instruction);
 	}
 
-	void address_based_instruction(vector<string> args, int instruction)
+	void ANNN(vector<string> args, int instruction)
 	{
 		require_args(args, {get_literal_type("address_name")});
 		string arg = args[0];
@@ -412,7 +412,7 @@ private:
 
 	void call_subroutine(vector<string> args)
 	{
-		address_based_instruction(args, opcode2nnn);
+		ANNN(args, opcode2nnn);
 	}
 
 	// where A is the instruction
@@ -498,7 +498,7 @@ private:
 
 	void jump(vector<string> args)
 	{
-		address_based_instruction(args, opcode1nnn);
+		ANNN(args, opcode1nnn);
 	}
 
 	void set_index(vector<string> args)
@@ -639,17 +639,65 @@ private:
 		AXYB(args, opcode8xy6);
 	}
 
+	void bitwise_shl_xy(vector<string> args)
+	{
+		AXYB(args, opcode8xyE);
+	}
+
 	void subn(vector<string> args)
 	{
 		AXYB(args, opcode8xy7);
 	}
 
-	void bitwise_shr_x(vector<string> args)
+	void AX0B(vector<string> args, int instruction)
 	{
 		require_args(args, {get_literal_type("register")});
 		int reg_x = parser_return_values.top();
 		parser_return_values.pop();
-		compilation.push_back(opcode8xy6 | (reg_x << 8));
+		compilation.push_back(instruction | (reg_x << 8));
+	}
+
+	void bitwise_shr_x(vector<string> args)
+	{
+		AX0B(args, opcode8xy6);
+	}
+
+	void bitwise_shl_x(vector<string> args)
+	{
+		AX0B(args, opcode8xyE);
+	}
+
+	void jump_plus(vector<string> args)
+	{
+		ANNN(args, opcodeBnnn);
+	}
+
+	void AXBC(vector<string> args, int instruction)
+	{
+		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		compilation.push_back(instruction | (reg << 8));
+	}
+
+	void skip_key_pressed(vector<string> args)
+	{
+		AXBC(args, opcodeEx9E);
+	}
+
+	void skip_key_not_pressed(vector<string> args)
+	{
+		AXBC(args, opcodeExA1);
+	}
+
+	void load_delay_timer_value(vector<string> args)
+	{
+		AXBC(args, opcodeFx07);
+	}
+
+	void set_delay_timer_value(vector<string> args)
+	{
+		AXBC(args, opcodeFx15);
 	}
 
 	struct Command
@@ -681,6 +729,20 @@ private:
 			 &c8asm::bitwise_shr_xy},
 			{"SHRX",
 			 &c8asm::bitwise_shr_x},
+			{"SHLXY",
+			 &c8asm::bitwise_shl_xy},
+			{"SHLX",
+			 &c8asm::bitwise_shl_x},
+			{"JPP",
+			 &c8asm::jump_plus},
+			{"SKP",
+			 &c8asm::skip_key_pressed},
+			{"SKNP",
+			 &c8asm::skip_key_not_pressed},
+			{"LDT",
+			 &c8asm::load_delay_timer_value},
+			{"SDT",
+			 &c8asm::set_delay_timer_value},
 			{"SUBN",
 			 &c8asm::subn},
 			{"CALL",

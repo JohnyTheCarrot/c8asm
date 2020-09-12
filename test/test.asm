@@ -24,6 +24,8 @@
 		CALL: draw
 		SET: v2, 4
 		CALL: draw
+		SET: v2, 8
+		CALL: draw
 		> add 6 so that the test is on the next line
 		SET: v1, 6
 		> reset v0 back to 0 so that the actual test is on the same x position
@@ -33,7 +35,7 @@
 	:main
 		> the following code should print this to the screen,
 		> if not, the assembler is malfunctioning
-		> 9 4 1 2 0 4 
+		> 9 4 1 2 0 4 8
 		CALL: reference
 		SET: v2, 8
 		SET: v3, 1
@@ -55,5 +57,7 @@
 		CALL: draw
 		SET: v2, 8
 		SHRX: v2
+		CALL: draw
+		SHLX: v2
 		CALL: draw
 	;
