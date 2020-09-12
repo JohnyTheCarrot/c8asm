@@ -154,6 +154,10 @@ private:
 			start_index = 2;
 			hexadecimal = true;
 		}
+		if (literal.length() > 1 && literal[0] == '-')
+		{
+			start_index++;
+		}
 		for (int i = start_index; i < literal.length(); i++)
 		{
 			char c = tolower(literal[i]);
@@ -161,7 +165,7 @@ private:
 			if (hexadecimal)
 				decimal_characters = "0123456789abcdef";
 			else
-				decimal_characters = "0123456789-";
+				decimal_characters = "0123456789";
 			if (strchr(decimal_characters, c) == nullptr)
 			{
 				char error_message_buffer[100];
@@ -365,35 +369,26 @@ private:
 	##############################################################################################
 	**/
 
-	void clear_screen(vector<string> args)
-	{
-		compilation.push_back(opcode00E0);
-	}
-
-	void set(vector<string> args)
+	void AXKK(vector<string> args, int instruction)
 	{
 		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
 		int value = parser_return_values.top();
 		parser_return_values.pop();
 		int reg = parser_return_values.top();
 		parser_return_values.pop();
-		int instruction = opcode6xkk;
-		instruction |= reg << 8;
-		instruction |= value;
-		compilation.push_back(instruction);
+		compilation.push_back(instruction | (reg << 8) | value);
 	}
 
-	void set_to_register(vector<string> args)
+	// A & B = nibble 0 and 3 of instruction
+	// X & Y = registers X and Y
+	void AXYB(vector<string> args, int instruction)
 	{
 		require_args(args, {get_literal_type("register"), get_literal_type("register")});
 		int reg_y = parser_return_values.top();
 		parser_return_values.pop();
 		int reg_x = parser_return_values.top();
 		parser_return_values.pop();
-		int instruction = opcode8xy0;
-		instruction |= reg_x << 8;
-		instruction |= reg_y << 4;
-		compilation.push_back(instruction);
+		compilation.push_back(instruction | (reg_x << 8) | (reg_y << 4));
 	}
 
 	void ANNN(vector<string> args, int instruction)
@@ -410,74 +405,62 @@ private:
 		compilation.push_back(0x0);
 	}
 
+	void AXBC(vector<string> args, int instruction)
+	{
+		require_args(args, {get_literal_type("register")});
+		int reg = parser_return_values.top();
+		parser_return_values.pop();
+		compilation.push_back(instruction | (reg << 8));
+	}
+
+	void clear_screen(vector<string> args)
+	{
+		compilation.push_back(opcode00E0);
+	}
+
+	void set(vector<string> args)
+	{
+		AXKK(args, opcode6xkk);
+	}
+
+	void set_to_register(vector<string> args)
+	{
+		AXYB(args, opcode8xy0);
+	}
+
 	void call_subroutine(vector<string> args)
 	{
 		ANNN(args, opcode2nnn);
 	}
 
-	// where A is the instruction
-	void AXNN(vector<string> args, int instruction)
-	{
-		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
-		int value = parser_return_values.top();
-		parser_return_values.pop();
-		int reg = parser_return_values.top();
-		parser_return_values.pop();
-		instruction |= reg << 8;
-		instruction |= value;
-		compilation.push_back(instruction);
-	}
-
 	void skip_eq(vector<string> args)
 	{
-		AXNN(args, opcode3xkk);
+		AXKK(args, opcode3xkk);
 	}
 
 	void skip_ne(vector<string> args)
 	{
-		AXNN(args, opcode4xkk);
+		AXKK(args, opcode4xkk);
 	}
 
 	void add(vector<string> args)
 	{
-		AXNN(args, opcode7xkk);
-	}
-
-	void register_condition(vector<string> args, bool eq)
-	{
-		require_args(args, {get_literal_type("register"), get_literal_type("register")});
-		int reg_y = parser_return_values.top();
-		parser_return_values.pop();
-		int reg_x = parser_return_values.top();
-		parser_return_values.pop();
-		int instruction;
-		if (eq)
-			instruction = opcode5xy0;
-		else
-			instruction = opcode9xy0;
-		instruction |= reg_x << 8;
-		instruction |= reg_y << 4;
-		compilation.push_back(instruction);
+		AXKK(args, opcode7xkk);
 	}
 
 	void skip_register_eq(vector<string> args)
 	{
-		register_condition(args, true);
+		AXYB(args, opcode5xy0);
 	}
 
 	void skip_register_ne(vector<string> args)
 	{
-		register_condition(args, false);
+		AXYB(args, opcode9xy0);
 	}
 
 	void font(vector<string> args)
 	{
-		require_args(args, {get_literal_type("register")});
-		int reg = parser_return_values.top();
-		parser_return_values.pop();
-		int instruction = opcodeFx29;
-		instruction |= reg << 8;
-		compilation.push_back(instruction);
+		AXBC(args, opcodeFx29);
 	}
 
 	void draw(vector<string> args)
@@ -519,22 +502,12 @@ private:
 
 	void add_index(vector<string> args)
 	{
-		require_args(args, {get_literal_type("register")});
-		int reg = parser_return_values.top();
-		parser_return_values.pop();
-		int instruction = opcodeFx1E;
-		instruction |= reg << 8;
-		compilation.push_back(instruction);
+		AXBC(args, opcodeFx1E);
 	}
 
 	void get_key(vector<string> args)
 	{
-		require_args(args, {get_literal_type("register")});
-		int reg = parser_return_values.top();
-		parser_return_values.pop();
-		int instruction = opcodeFx0A;
-		instruction |= reg << 8;
-		compilation.push_back(instruction);
+		AXBC(args, opcodeFx0A);
 	}
 
 	void load_sprite(vector<string> args)
@@ -589,24 +562,7 @@ private:
 
 	void rand(vector<string> args)
 	{
-		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
-		int byte = parser_return_values.top();
-		parser_return_values.pop();
-		int reg = parser_return_values.top();
-		parser_return_values.pop();
-		compilation.push_back(opcodeCxkk | (reg << 8) | byte);
-	}
-
-	// A & B = nibble 0 and 3 of instruction
-	// X & Y = registers X and Y
-	void AXYB(vector<string> args, int instruction)
-	{
-		require_args(args, {get_literal_type("register"), get_literal_type("register")});
-		int reg_y = parser_return_values.top();
-		parser_return_values.pop();
-		int reg_x = parser_return_values.top();
-		parser_return_values.pop();
-		compilation.push_back(instruction | (reg_x << 8) | (reg_y << 4));
+		AXKK(args, opcodeCxkk);
 	}
 
 	void bitwise_or(vector<string> args)
@@ -649,35 +605,19 @@ private:
 		AXYB(args, opcode8xy7);
 	}
 
-	void AX0B(vector<string> args, int instruction)
-	{
-		require_args(args, {get_literal_type("register")});
-		int reg_x = parser_return_values.top();
-		parser_return_values.pop();
-		compilation.push_back(instruction | (reg_x << 8));
-	}
-
 	void bitwise_shr_x(vector<string> args)
 	{
-		AX0B(args, opcode8xy6);
+		AXBC(args, opcode8xy6);
 	}
 
 	void bitwise_shl_x(vector<string> args)
 	{
-		AX0B(args, opcode8xyE);
+		AXBC(args, opcode8xyE);
 	}
 
 	void jump_plus(vector<string> args)
 	{
 		ANNN(args, opcodeBnnn);
-	}
-
-	void AXBC(vector<string> args, int instruction)
-	{
-		require_args(args, {get_literal_type("register"), get_literal_type("integer")});
-		int reg = parser_return_values.top();
-		parser_return_values.pop();
-		compilation.push_back(instruction | (reg << 8));
 	}
 
 	void skip_key_pressed(vector<string> args)
@@ -698,6 +638,28 @@ private:
 	void set_delay_timer_value(vector<string> args)
 	{
 		AXBC(args, opcodeFx15);
+	}
+
+	// The interpreter takes the decimal value of Vx,
+	// and places the hundreds digit in memory at location in I,
+	// the tens digit at location I+1, and the ones digit at location I+2.
+	void BCDvX(vector<string> args)
+	{
+		AXBC(args, opcodeFx33);
+	}
+
+	// Store registers V0 through Vx in memory starting at location I.
+	// The interpreter copies the values of registers V0 through Vx into memory, starting at the address in I.
+	void store_registers_into_ram(vector<string> args)
+	{
+		AXBC(args, opcodeFx33);
+	}
+
+	// Read registers V0 through Vx from memory starting at location I.
+	// The interpreter reads values from memory starting at location I into registers V0 through Vx.
+	void load_registers_from_ram(vector<string> args)
+	{
+		AXBC(args, opcodeFx65);
 	}
 
 	struct Command
@@ -743,6 +705,12 @@ private:
 			 &c8asm::load_delay_timer_value},
 			{"SDT",
 			 &c8asm::set_delay_timer_value},
+			{"BCD",
+			 &c8asm::BCDvX},
+			{"SR",
+			 &c8asm::store_registers_into_ram},
+			{"LR",
+			 &c8asm::load_registers_from_ram},
 			{"SUBN",
 			 &c8asm::subn},
 			{"CALL",
